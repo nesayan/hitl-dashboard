@@ -1,0 +1,10 @@
+from fastapi import APIRouter
+
+from routes import hitl_task
+from routes import user_run
+
+
+routers = APIRouter()
+routers.include_router(hitl_task.router)
+routers.include_router(user_run.router)
+

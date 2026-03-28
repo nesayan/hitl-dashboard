@@ -1,0 +1,10 @@
+fastapi
+langgraph
+langgraph-checkpoint-sqlite
+langchain-openai
+python-dotenv
+pydantic-settings
+uvicorn
+SQLAlchemy
+aiosqlite
+alembic
