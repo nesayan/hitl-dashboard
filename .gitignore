@@ -1,7 +1,7 @@
 # Environment variables
 core/.env
 .env
-.env.*
+.env.local
 
 # Virtual environments
 .venv/
