@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
-from database.models import HITLTask, HITLTaskStatus
+from database.models import HITLTask, HITLTaskStatus, UserRun
 
 import logging
 
@@ -18,17 +18,18 @@ class HITLTaskService:
         cls,
         session: AsyncSession,
         hitl_task_id: UUID,
-        thread_id: str,
+        user_run_id: str,
         task_name: str,
         task_args: Optional[dict] = None,
         task_description: Optional[str] = None,
+        tool_call_object: Optional[dict] = None,
     ) -> HITLTask:
         '''
         Creates a new HITLTask and saves it to the database.
 
         Args:
             session: The async database session.
-            thread_id: The thread_id of the parent UserRun.
+            user_run_id: The user_run_id of the parent UserRun.
             task_name: The name of the task.
             task_args: Optional dict of tool call arguments.
             task_description: Optional description of the task.
@@ -37,17 +38,18 @@ class HITLTaskService:
             The newly created HITLTask.
 
         Raises:
-            ValueError: If thread_id is not a valid UUID string.
+            ValueError: If user_run_id is not a valid UUID string.
             IntegrityError: If the operation violates database constraints (e.g. invalid foreign key).
             Exception: If an unexpected error occurs during commit.
         '''
 
         hitl_task = HITLTask(
             hitl_task_id=hitl_task_id,
-            thread_id=UUID(thread_id),
+            user_run_id=UUID(user_run_id),
             task_name=task_name,
             task_args=task_args,
             task_description=task_description,
+            tool_call_object=tool_call_object,
         )
 
         session.add(hitl_task)
@@ -158,6 +160,57 @@ class HITLTaskService:
         return hitl_task
     
     @classmethod
+    async def update_hitltask_status(
+        cls,
+        session: AsyncSession,
+        hitl_task_id: str,
+        status: HITLTaskStatus,
+    ) -> HITLTask:
+        hitl_task = await session.get(HITLTask, UUID(hitl_task_id))
+        if not hitl_task:
+            raise ValueError(f"HITLTask with id {hitl_task_id} not found.")
+
+        hitl_task.status = status
+
+        try:
+            await session.commit()
+            await session.refresh(hitl_task)
+        except IntegrityError as e:
+            await session.rollback()
+            logger.error(f"Failed to update HITLTask status: {str(e)}")
+            raise e
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Unexpected error occurred while updating HITLTask status: {str(e)}")
+            raise e
+
+        return hitl_task
+
+    @classmethod
+    async def update_hitltask_output(
+        cls,
+        session: AsyncSession,
+        hitl_task_id: str,
+        output: str,
+    ) -> HITLTask:
+        hitl_task = await session.get(HITLTask, UUID(hitl_task_id))
+        if not hitl_task:
+            raise ValueError(f"HITLTask with id {hitl_task_id} not found.")
+
+        hitl_task.output = output
+        hitl_task.status = HITLTaskStatus.COMPLETED
+
+        try:
+            await session.commit()
+            await session.refresh(hitl_task)
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Failed to update HITLTask output: {str(e)}")
+            raise e
+
+        return hitl_task
+
+    @classmethod
     async def delete_hitltask(
         cls,
         session: AsyncSession,
@@ -198,54 +251,58 @@ class HITLTaskService:
         return True
     
     @classmethod
-    async def get_hitltasks_by_thread_id(
+    async def get_hitltasks_by_user_id(
         cls,
         session: AsyncSession,
-        thread_id: str,
+        user_id: str,
     ) -> list[HITLTask]:
         '''
-        Retrieves all HITLTasks associated with a specific UserRun.
+        Retrieves all HITLTasks associated with a specific user_id.
 
         Args:
             session: The async database session.
-            thread_id: The thread_id of the UserRun to filter by.
+            user_id: The user_id to filter by.
 
         Returns:
-            A list of HITLTasks associated with the given thread_id.
+            A list of HITLTasks associated with the given user_id.
 
         Raises:
-            ValueError: If thread_id is not a valid UUID string.
+            ValueError: If user_id is not a valid UUID string.
         '''
 
         result = await session.execute(
-            select(HITLTask).where(HITLTask.thread_id == UUID(thread_id))
+            select(HITLTask)
+            .join(UserRun, HITLTask.user_run_id == UserRun.user_run_id)
+            .where(UserRun.user_id == UUID(user_id))
         )
         return result.scalars().all()
     
     @classmethod
-    async def get_hitltask_by_thread_id_and_task_name(
+    async def get_hitltask_by_user_id_and_task_name(
         cls,
         session: AsyncSession,
-        thread_id: str,
+        user_id: str,
         task_name: str,
     ) -> Optional[HITLTask]:
         '''
-        Retrieves a HITLTask by its UserRun thread_id and task name.
+        Retrieves a HITLTask by its UserRun user_id and task name.
 
         Args:
             session: The async database session.
-            thread_id: The thread_id of the UserRun to filter by.
+            user_id: The user_id of the UserRun to filter by.
             task_name: The name of the task to filter by.
 
         Returns:
             The HITLTask if found, otherwise None.
 
         Raises:
-            ValueError: If thread_id is not a valid UUID string.
+            ValueError: If user_id is not a valid UUID string.
         '''
         result = await session.execute(
-            select(HITLTask).where(
-                (HITLTask.thread_id == UUID(thread_id)) &
+            select(HITLTask)
+            .join(UserRun, HITLTask.user_run_id == UserRun.user_run_id)
+            .where(
+                (UserRun.user_id == UUID(user_id)) &
                 (HITLTask.task_name == task_name)
             )
         )
@@ -253,31 +310,33 @@ class HITLTaskService:
     
     # check if a task exist with a userrun, task, args and status 
     @classmethod
-    async def get_hitltask_by_thread_id_task_name_args_and_status(
+    async def get_hitltask_by_user_id_task_name_args_and_status(
         cls,
         session: AsyncSession,
-        thread_id: str,
+        user_id: str,
         task_name: str,
         task_args: dict,
         status: HITLTaskStatus = HITLTaskStatus.PENDING,
     ) -> Optional[HITLTask]:
         '''
-        Retrieves a HITLTask by its UserRun thread_id, task name, task args and status.
+        Retrieves a HITLTask by its UserRun user_id, task name, task args and status.
 
         Args:
             session: The async database session.
-            thread_id: The thread_id of the UserRun to filter by.
+            user_id: The user_id of the UserRun to filter by.
             task_name: The name of the task to filter by.
             task_args: The arguments of the task to filter by.
             status: The status of the HITLTask to filter by (default is PENDING).
         Returns:
             The HITLTask if found, otherwise None.
         Raises:
-            ValueError: If thread_id is not a valid UUID string.
+            ValueError: If user_id is not a valid UUID string.
         '''
         result = await session.execute(
-            select(HITLTask).where(
-                (HITLTask.thread_id == UUID(thread_id)) &
+            select(HITLTask)
+            .join(UserRun, HITLTask.user_run_id == UserRun.user_run_id)
+            .where(
+                (UserRun.user_id == UUID(user_id)) &
                 (HITLTask.task_name == task_name) &
                 (HITLTask.task_args == task_args) &
                 (HITLTask.status == status)
@@ -285,3 +344,39 @@ class HITLTaskService:
         )
 
         return result.scalars().first()
+    
+    @classmethod
+    async def get_all_tasks_by_user_id_and_status(
+        cls,
+        session: AsyncSession,
+        user_id: str,
+        status: HITLTaskStatus = HITLTaskStatus.PENDING,
+    ) -> list[HITLTask]:
+        '''
+        Retrieves all HITLTasks by user_id and status.
+
+        Args:
+            session: The async database session.
+            user_id: The user_id to filter by.
+            status: The status of the HITLTasks to filter by (default is PENDING).
+        Returns:
+            A list of HITLTasks matching the criteria.
+        Raises:
+            ValueError: If user_id is not a valid UUID string.
+        '''
+        try:
+            result = await session.execute(
+                select(HITLTask)
+                .join(UserRun, HITLTask.user_run_id == UserRun.user_run_id)
+                .where(
+                    (UserRun.user_id == UUID(user_id)) &
+                    (HITLTask.status == status)
+                )
+            )
+            return result.scalars().all()
+        except ValueError as e:
+            logger.error(f"Invalid UUID format for user_id: {user_id}")
+            raise e
+        except Exception as e:
+            logger.error(f"Unexpected error occurred while retrieving HITLTasks: {str(e)}")
+            raise e

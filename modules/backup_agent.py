@@ -13,6 +13,8 @@ from database.models import generate_hitl_task_id, HITLTaskStatus
 from langchain_openai import AzureChatOpenAI
 from langgraph.graph import StateGraph, START, END, add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
+import aiosqlite
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage, ToolMessage
 
 from core.config import settings
@@ -36,10 +38,9 @@ class State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     user_id: uuid.UUID
     user_run_id: uuid.UUID
-    fresh: bool
-    hitl_task_id_to_resume: uuid.UUID | None
 
 _graph = None
+_checkpointer = None
 
 async def get_graph():
     global _graph
@@ -48,19 +49,27 @@ async def get_graph():
     _graph = await build_graph()
     return _graph
 
+async def get_checkpointer(database_name: str = "checkpointer.db"):
+    global _checkpointer
+    if _checkpointer is None:
+        _checkpointer_conn = await aiosqlite.connect(database_name)
+        _checkpointer = AsyncSqliteSaver(_checkpointer_conn)
+        await _checkpointer.setup()
+    return _checkpointer
+    
+   
+async def close_checkpointer():
+    global _checkpointer
+    if _checkpointer is not None:
+        await _checkpointer.conn.close()
+        _checkpointer = None
+
 
 async def build_graph():
 
     workflow = StateGraph(State)
 
     tool_node = ToolNode(TOOLS)
-
-    async def check_fresh_or_resume_task(state: State):
-        if state.get("fresh"):
-            logger.info("[Graph] Starting fresh execution.")
-            return "llm_node"
-        
-        return "resume_task_node"
 
     async def llm_node(state: State):
         system_prompt = SystemMessage(content='''
@@ -69,8 +78,8 @@ async def build_graph():
             1. You should always use tools for the operations whenever possible.
             2. General questions should be answered directly without using tools.
             3. If a tool returns output with some approval status, you should respond only on the current approval status.
-        '''
-        )
+        ''')
+
         llm = AzureChatOpenAI(
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             azure_deployment=settings.AZURE_OPENAI_DEPLOYMENT,
@@ -85,28 +94,18 @@ async def build_graph():
 
         return {"messages": [llm_response]}
     
-    async def tools_router(state: State):
+    def tools_router(state: State):
         last_message = state["messages"][-1]
 
-        # if no tool calls, it's the final answer if resuming. Save the answer and go to __end__
+        # if no tool calls, go to END
         if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
-            # Save output to HITL task if resuming
-            hitl_task_id = state.get("hitl_task_id_to_resume")
-            if hitl_task_id:
-                async with AsyncSessionLocal() as session:
-                    await HITLTaskService.update_hitltask_output(
-                        session=session,
-                        hitl_task_id=str(hitl_task_id),
-                        output=last_message.content,
-                    )
-                    logger.info(f"[Tools Router] Saved output to HITL task {hitl_task_id}")
             return "__end__"
 
         tool_call_name = last_message.tool_calls[0]["name"]
         tool_def = next((t for t in TOOLS if t.name == tool_call_name), None)
         requires_approval = tool_def and tool_def.metadata.get("requires_approval")
 
-        if requires_approval and not state.get("hitl_task_id_to_resume"):
+        if requires_approval:
             return "entry_task_in_database_node"
         return "tool_node"
         
@@ -127,9 +126,7 @@ async def build_graph():
                     task_args=task_args,
                     status=HITLTaskStatus.PENDING
                 )
-                
                 if existing_task:
-                    print(existing_task.hitl_task_id)
                     logger.info(f"[Database Node] Task with status PENDING already exists: {existing_task.hitl_task_id}")
                     response_messages.append(ToolMessage(
                         content="A similar task already exists and is pending approval. Please wait for it to be reviewed by the admin.",
@@ -141,71 +138,26 @@ async def build_graph():
             async with AsyncSessionLocal() as session:
                 hitl_task = await HITLTaskService.create_hitltask(
                     session=session,
-                    hitl_task_id=uuid.uuid4(),
+                    hitl_task_id=generate_hitl_task_id(state["user_id"], task_name, task_args),
                     user_run_id=str(state["user_run_id"]),
                     task_name=task_name,
                     task_args=task_args,
-                    tool_call_object= tool_call,
                     task_description=f"Tool call for {task_name} with args {task_args} requires approval."
                 )
                 logger.info(f"[Database Node] Created HITLTask with ID: {hitl_task.hitl_task_id}")
                 response_messages.append(ToolMessage(
-                    content="You must say a request has been submitted for review. Please wait for the admin to approve it.",
+                    content="Your request has been submitted for review. Please wait for the admin to approve it.",
                     tool_call_id=tool_call["id"],
                 ))
 
         return {"messages": response_messages}
-    
-    # This node simulates an LLM behaviour.
-    async def resume_task_node(state: State):
-        hitl_task_to_resume = state.get("hitl_task_id_to_resume")
-
-        async with AsyncSessionLocal() as session:
-            task = await HITLTaskService.get_hitltask_by_id(session, hitl_task_to_resume)
-
-            if not task:
-                logger.error(f"[Resume Node] No task found with ID: {hitl_task_to_resume}")
-                return {
-                    "messages": [AIMessage(content="Error: The task you are trying to resume does not exist.")]
-                }
-
-            if task.status == HITLTaskStatus.APPROVED:
-                tool_call = task.tool_call_object
-                logger.info(f"[Resume Node] Task {task.hitl_task_id} is approved. Executing tool.")
-                return {
-                    "messages": [AIMessage(content="", tool_calls=[tool_call])]
-                }
-            else:
-                logger.info(f"[Resume Node] Task {task.hitl_task_id} status: {task.status}")
-                return {
-                    "messages": [AIMessage(content=f"Task status: {task.status.value}. Cannot execute.")]
-                }
-
-    def resume_task_router(state: State):
-        last_message = state["messages"][-1]
-        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-            return "tool_node"
-        return "__end__"
-
-
-
                     
+
     workflow.add_node("llm_node", llm_node)
     workflow.add_node("tool_node", tool_node)
     workflow.add_node("entry_task_in_database_node", entry_task_in_database_node)
-    workflow.add_node("resume_task_node", resume_task_node)
 
-    # Workflow start
-    workflow.add_conditional_edges(
-        START,
-        check_fresh_or_resume_task,
-        {
-            "llm_node": "llm_node",
-            "resume_task_node": "resume_task_node"
-        }
-    )
-
-    # Logic for fresh execution workflow
+    workflow.add_edge(START, "llm_node")
     workflow.add_conditional_edges(
         "llm_node",
         tools_router,
@@ -218,17 +170,8 @@ async def build_graph():
     workflow.add_edge("tool_node", "llm_node")
     workflow.add_edge("entry_task_in_database_node", "llm_node")
 
-    # Logic for resuming: approved → tool_node → llm_node, not approved → END
-    workflow.add_conditional_edges(
-        "resume_task_node",
-        resume_task_router,
-        {
-            "tool_node": "tool_node",
-            "__end__": END,
-        }
-    )
-
-    graph = workflow.compile()
+    checkpointer = await get_checkpointer()
+    graph = workflow.compile(checkpointer=checkpointer)
 
     # save png mermaid
     with open("graph_output.png", "wb") as f:
@@ -262,18 +205,17 @@ if __name__ == "__main__":
                 user_run_id = str(user_run.user_run_id)
                 logger.info(f"Created UserRun: {user_run_id}")
 
-            # 3. Invoke graph with user_run_id as thread_id for isolated history
+            # 3. Invoke graph with the user_id
             state = {
                 "messages": [HumanMessage(content=message)],
                 "user_id": user_id,
                 "user_run_id": user_run_id,
-                "fresh": True,
-                "hitl_task_id_to_resume": None,
-
             }
-            final_state = await graph.ainvoke(state)
+            config = {"configurable": {"thread_id": user_id}}
+
+            final_state = await graph.ainvoke(state, config)
             print(final_state["messages"][-1].content)
         finally:
-            pass
+            await close_checkpointer()
 
     asyncio.run(main())

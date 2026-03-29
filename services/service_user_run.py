@@ -19,27 +19,28 @@ class UserRunService:
     async def create_user_run(
         cls,
         session: AsyncSession,
-        thread_id: str = None,
+        user_id: str,
+        message: Optional[str] = None,
     ) -> UserRun:
         '''
         Creates a new UserRun and saves it to the database.
-        If no thread_id is provided, one will be auto-generated via uuid4.
 
         Args:
             session: The async database session.
-            thread_id: Optional UUID string to use as the primary key.
-                       If None, a new UUID is generated automatically.
+            user_id: UUID string of the parent User.
+            message: Optional message for the run.
 
         Returns:
             The newly created UserRun instance.
 
         Raises:
-            IntegrityError: If the thread_id already exists or violates a constraint.
+            IntegrityError: If the user_id doesn't exist or violates a constraint.
             Exception: If an unexpected error occurs during commit.
         '''
 
         user_run = UserRun(
-            thread_id=UUID(thread_id) if thread_id else uuid.uuid4(),
+            user_id=UUID(user_id),
+            message=message,
         )
 
         session.add(user_run)
@@ -61,23 +62,23 @@ class UserRunService:
     async def get_user_run_by_id(
         cls,
         session: AsyncSession,
-        thread_id: str,
+        user_run_id: str,
     ) -> Optional[UserRun]:
         '''
-        Retrieves a single UserRun by its primary key (thread_id).
+        Retrieves a single UserRun by its primary key (user_run_id).
 
         Args:
             session: The async database session.
-            thread_id: The UUID string of the UserRun to retrieve.
+            user_run_id: The UUID string of the UserRun to retrieve.
 
         Returns:
             The UserRun if found, otherwise None.
 
         Raises:
-            ValueError: If thread_id is not a valid UUID string.
+            ValueError: If user_run_id is not a valid UUID string.
         '''
 
-        result = await session.get(UserRun, UUID(thread_id))
+        result = await session.get(UserRun, UUID(user_run_id))
         return result
 
     @classmethod
@@ -104,27 +105,27 @@ class UserRunService:
     async def delete_user_run(
         cls,
         session: AsyncSession,
-        thread_id: str,
+        user_run_id: str,
     ) -> None:
         '''
-        Deletes a UserRun by its thread_id.
+        Deletes a UserRun by its user_run_id.
         Due to cascade="all, delete-orphan" on the UserRun.hitl_tasks
         relationship, all associated HITLTask records are also deleted.
 
         Args:
             session: The async database session.
-            thread_id: The UUID string of the UserRun to delete.
+            user_run_id: The UUID string of the UserRun to delete.
 
         Raises:
-            ValueError: If thread_id is not a valid UUID string,
-                        or if no UserRun exists with the given thread_id.
+            ValueError: If user_run_id is not a valid UUID string,
+                        or if no UserRun exists with the given user_run_id.
             IntegrityError: If the delete violates a database constraint.
             Exception: If an unexpected error occurs during commit.
         '''
 
-        user_run = await session.get(UserRun, UUID(thread_id))
+        user_run = await session.get(UserRun, UUID(user_run_id))
         if not user_run:
-            raise ValueError(f"UserRun with thread_id {thread_id} not found.")
+            raise ValueError(f"UserRun with user_run_id {user_run_id} not found.")
 
         try:
             await session.delete(user_run)

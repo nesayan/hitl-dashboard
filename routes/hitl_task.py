@@ -13,7 +13,7 @@ router = APIRouter(prefix="/hitl", tags=["HITL Tasks"])
 
 
 class HITLTaskCreateRequest(BaseModel):
-    thread_id: str
+    user_run_id: str
     task_name: str
     task_description: Optional[str] = None
 
@@ -25,7 +25,7 @@ class HITLTaskUpdateRequest(BaseModel):
 
 class HITLTaskResponse(BaseModel):
     hitl_task_id: str
-    thread_id: str
+    user_run_id: str
     task_name: str
     task_description: Optional[str] = None
     created_at: datetime
@@ -65,14 +65,14 @@ async def create_hitl_task(
     try:
         task = await HITLTaskService.create_hitltask(
             session=session,
-            thread_id=body.thread_id,
+            user_run_id=body.user_run_id,
             task_name=body.task_name,
             task_description=body.task_description,
         )
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format.")
     except IntegrityError:
-        raise HTTPException(status_code=409, detail="Integrity constraint violated. Check thread_id (user_run).")
+        raise HTTPException(status_code=409, detail="Integrity constraint violated. Check user_run_id.")
 
     return task
 

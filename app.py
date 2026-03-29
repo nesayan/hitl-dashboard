@@ -7,12 +7,24 @@ from contextlib import asynccontextmanager
 from routes import routers
 
 from database.models import Base
-from database.engine import engine
+from database.engine import engine, AsyncSessionLocal
+
+from services.service_user import UserService
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+
+    async with AsyncSessionLocal() as session:
+        user = await UserService.create_mock_user(session)
+        logger.info(f"Mock user created with username: {user.username} and id: {user.user_id}")
+    
     yield
+
     from modules.agent import close_checkpointer
     await close_checkpointer()
     
