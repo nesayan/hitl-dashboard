@@ -67,7 +67,8 @@ async def reject_task(hitl_task_id: str) -> str:
 if __name__ == "__main__":
     import asyncio
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    from core.config import setup_logging
+    setup_logging()
 
     async def main():
         user_id = input("Enter user_id: ").strip()

@@ -12,7 +12,9 @@ from database.engine import engine, AsyncSessionLocal
 from services.service_user import UserService
 
 import logging
+from core.config import setup_logging
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
@@ -24,9 +26,6 @@ async def lifespan(app: FastAPI):
         logger.info(f"Mock user created with username: {user.username} and id: {user.user_id}")
     
     yield
-
-    from modules.agent import close_checkpointer
-    await close_checkpointer()
     
 app = FastAPI(lifespan=lifespan)
 

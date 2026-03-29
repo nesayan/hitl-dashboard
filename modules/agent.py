@@ -27,10 +27,6 @@ from modules.tools import TOOLS
 import logging
 
 logger = logging.getLogger(__name__)
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-logger.addHandler(console_handler)
 
 class State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
@@ -129,7 +125,6 @@ async def build_graph():
                 )
                 
                 if existing_task:
-                    print(existing_task.hitl_task_id)
                     logger.info(f"[Database Node] Task with status PENDING already exists: {existing_task.hitl_task_id}")
                     response_messages.append(ToolMessage(
                         content="A similar task already exists and is pending approval. Please wait for it to be reviewed by the admin.",
@@ -241,6 +236,9 @@ if __name__ == "__main__":
     import asyncio
     from database.models import Base
     from database.engine import engine
+
+    from core.config import setup_logging
+    setup_logging()
 
     async def main():
         try:

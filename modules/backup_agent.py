@@ -29,10 +29,6 @@ from modules.tools import TOOLS
 import logging
 
 logger = logging.getLogger(__name__)
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-logger.addHandler(console_handler)
 
 class State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
