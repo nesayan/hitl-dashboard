@@ -4,20 +4,21 @@ backend/core/.env
 .env.local
 
 # Virtual environments
-.venv/
-venv/
-env/
+backend/.venv/
+backend/venv/
+backend/env/
 
 # Python
-__pycache__/
+backend/__pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
 
 # Distribution / packaging
-dist/
-build/
-*.egg-info/
+backend/dist/
+backend/build/
+backend/*.egg-info/
 *.egg
 
 # IDE
@@ -33,14 +34,14 @@ Desktop.ini
 .DS_Store
 
 # Database
-*.db
-*.sqlite3
+backend/*.db
+backend/*.sqlite3
 
 # Logs
 *.log
 
 # Testing
-.pytest_cache/
-.coverage
-htmlcov/
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
 
