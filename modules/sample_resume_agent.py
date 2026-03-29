@@ -23,7 +23,7 @@ async def approve_and_resume(hitl_task_id: str, user_id: str, user_run_id: str) 
     """
     # 1. Update the task status to APPROVED
     async with AsyncSessionLocal() as session:
-        task = await HITLTaskService.update_hitltask_status(
+        task = await HITLTaskService.update_hitltask(
             session=session,
             hitl_task_id=hitl_task_id,
             status=HITLTaskStatus.APPROVED,
@@ -55,7 +55,7 @@ async def reject_task(hitl_task_id: str) -> str:
         A confirmation message.
     """
     async with AsyncSessionLocal() as session:
-        task = await HITLTaskService.update_hitltask_status(
+        task = await HITLTaskService.update_hitltask(
             session=session,
             hitl_task_id=hitl_task_id,
             status=HITLTaskStatus.REJECTED,

@@ -14,11 +14,12 @@ from services.service_user import UserService
 import logging
 from core.config import setup_logging
 
-setup_logging()
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
+
     Base.metadata.create_all(bind=engine)
 
     async with AsyncSessionLocal() as session:

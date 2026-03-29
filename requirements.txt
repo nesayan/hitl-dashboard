@@ -1,10 +1,13 @@
 fastapi
+uvicorn
+
+python-dotenv
+pydantic-settings
+
 langgraph
 langgraph-checkpoint-sqlite
 langchain-openai
-python-dotenv
-pydantic-settings
-uvicorn
+langchain-tavily
+
 SQLAlchemy
 aiosqlite
-alembic

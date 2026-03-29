@@ -117,15 +117,20 @@ class HITLTaskService:
         hitl_task_id: str,
         task_name: Optional[str] = None,
         task_description: Optional[str] = None,
-    ) -> Optional[HITLTask]:
+        status: Optional[HITLTaskStatus] = None,
+        output: Optional[str] = None,
+    ) -> HITLTask:
         '''
         Updates an existing HITLTask with the provided fields.
+        Only non-None fields are updated.
 
         Args:
             session: The async database session.
             hitl_task_id: The ID of the HITLTask to update.
             task_name: New task name, or None to leave unchanged.
             task_description: New task description, or None to leave unchanged.
+            status: New status, or None to leave unchanged.
+            output: New output, or None to leave unchanged.
 
         Returns:
             The updated HITLTask.
@@ -144,6 +149,10 @@ class HITLTaskService:
             hitl_task.task_name = task_name
         if task_description is not None:
             hitl_task.task_description = task_description
+        if status is not None:
+            hitl_task.status = status
+        if output is not None:
+            hitl_task.output = output
         
         try:
             await session.commit()
@@ -155,57 +164,6 @@ class HITLTaskService:
         except Exception as e:
             await session.rollback()
             logger.error(f"Unexpected error occurred while updating HITLTask: {str(e)}")
-            raise e
-
-        return hitl_task
-    
-    @classmethod
-    async def update_hitltask_status(
-        cls,
-        session: AsyncSession,
-        hitl_task_id: str,
-        status: HITLTaskStatus,
-    ) -> HITLTask:
-        hitl_task = await session.get(HITLTask, UUID(hitl_task_id))
-        if not hitl_task:
-            raise ValueError(f"HITLTask with id {hitl_task_id} not found.")
-
-        hitl_task.status = status
-
-        try:
-            await session.commit()
-            await session.refresh(hitl_task)
-        except IntegrityError as e:
-            await session.rollback()
-            logger.error(f"Failed to update HITLTask status: {str(e)}")
-            raise e
-        except Exception as e:
-            await session.rollback()
-            logger.error(f"Unexpected error occurred while updating HITLTask status: {str(e)}")
-            raise e
-
-        return hitl_task
-
-    @classmethod
-    async def update_hitltask_output(
-        cls,
-        session: AsyncSession,
-        hitl_task_id: str,
-        output: str,
-    ) -> HITLTask:
-        hitl_task = await session.get(HITLTask, UUID(hitl_task_id))
-        if not hitl_task:
-            raise ValueError(f"HITLTask with id {hitl_task_id} not found.")
-
-        hitl_task.output = output
-        hitl_task.status = HITLTaskStatus.COMPLETED
-
-        try:
-            await session.commit()
-            await session.refresh(hitl_task)
-        except Exception as e:
-            await session.rollback()
-            logger.error(f"Failed to update HITLTask output: {str(e)}")
             raise e
 
         return hitl_task

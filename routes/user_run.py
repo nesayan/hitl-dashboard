@@ -20,6 +20,10 @@ class UserRunCreateRequest(BaseModel):
     message: Optional[str] = None
 
 
+class UserRunUpdateRequest(BaseModel):
+    message: Optional[str] = None
+
+
 class UserRunResponse(BaseModel):
     user_run_id: str
     user_id: str
@@ -33,6 +37,7 @@ class UserRunResponse(BaseModel):
 async def get_all_user_runs(
     session: AsyncSession = Depends(get_async_db),
 ):
+    """Retrieve all user runs."""
     try:
         user_runs = await UserRunService.get_all_user_runs(session)
         return user_runs
@@ -46,6 +51,7 @@ async def get_user_run(
     user_run_id: str,
     session: AsyncSession = Depends(get_async_db),
 ):
+    """Retrieve a single user run by its ID."""
     try:
         user_run = await UserRunService.get_user_run_by_id(session, user_run_id)
     except ValueError:
@@ -65,6 +71,10 @@ async def create_user_run(
     body: UserRunCreateRequest,
     session: AsyncSession = Depends(get_async_db),
 ):
+    """Create a new user run.
+
+    The user_id must reference an existing User. Returns 409 on constraint violation.
+    """
     try:
         user_run = await UserRunService.create_user_run(session, user_id=body.user_id, message=body.message)
     except IntegrityError:
@@ -76,11 +86,36 @@ async def create_user_run(
     return user_run
 
 
+@router.patch("/{user_run_id}", response_model=UserRunResponse)
+async def update_user_run(
+    user_run_id: str,
+    body: UserRunUpdateRequest,
+    session: AsyncSession = Depends(get_async_db),
+):
+    """Partially update a user run.
+
+    Currently supports updating the message field.
+    """
+    try:
+        user_run = await UserRunService.update_user_run(session, user_run_id=user_run_id, message=body.message)
+    except ValueError as e:
+        raise HTTPException(status_code=404 if "not found" in str(e) else 400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to update UserRun: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error.")
+
+    return user_run
+
+
 @router.delete("/{user_run_id}", status_code=204)
 async def delete_user_run(
     user_run_id: str,
     session: AsyncSession = Depends(get_async_db),
 ):
+    """Delete a user run by its ID.
+
+    Cascade-deletes all associated HITL tasks.
+    """
     try:
         await UserRunService.delete_user_run(session, user_run_id)
     except ValueError as e:

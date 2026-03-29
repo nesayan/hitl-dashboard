@@ -102,6 +102,49 @@ class UserRunService:
         return result.scalars().all()
 
     @classmethod
+    async def update_user_run(
+        cls,
+        session: AsyncSession,
+        user_run_id: str,
+        message: Optional[str] = None,
+    ) -> UserRun:
+        '''Update an existing UserRun. Only non-None fields are modified.
+
+        Args:
+            session: The async database session.
+            user_run_id: The UUID string of the UserRun to update.
+            message: New message, or None to leave unchanged.
+
+        Returns:
+            The updated UserRun instance.
+
+        Raises:
+            ValueError: If no UserRun exists with the given user_run_id.
+            IntegrityError: If the update violates a database constraint.
+            Exception: If an unexpected error occurs during commit.
+        '''
+        user_run = await session.get(UserRun, UUID(user_run_id))
+        if not user_run:
+            raise ValueError(f"UserRun with user_run_id {user_run_id} not found.")
+
+        if message is not None:
+            user_run.message = message
+
+        try:
+            await session.commit()
+            await session.refresh(user_run)
+        except IntegrityError as e:
+            await session.rollback()
+            logger.error(f"Failed to update UserRun: {str(e)}")
+            raise e
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Unexpected error occurred while updating UserRun: {str(e)}")
+            raise e
+
+        return user_run
+
+    @classmethod
     async def delete_user_run(
         cls,
         session: AsyncSession,

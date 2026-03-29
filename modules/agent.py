@@ -103,7 +103,7 @@ async def build_graph():
             Instructions you MUST follow:
             1. You should always use tools for the operations whenever possible.
             2. General questions should be answered directly without using tools.
-            3. If a tool returns output with some approval status, you should respond only on the current approval status.
+            3. If a tool isnt approved, you must not answer the query even if you know the answer from your training knowledge..
         '''
         )
         llm = AzureChatOpenAI(
@@ -135,10 +135,11 @@ async def build_graph():
             hitl_task_id = state.get("hitl_task_id_to_resume")
             if hitl_task_id:
                 async with AsyncSessionLocal() as session:
-                    await HITLTaskService.update_hitltask_output(
+                    await HITLTaskService.update_hitltask(
                         session=session,
                         hitl_task_id=str(hitl_task_id),
                         output=last_message.content,
+                        status=HITLTaskStatus.COMPLETED,
                     )
                     logger.info(f"[Tools Router] Saved output to HITL task {hitl_task_id}")
             return "__end__"
@@ -146,6 +147,8 @@ async def build_graph():
         tool_call_name = last_message.tool_calls[0]["name"]
         tool_def = next((t for t in TOOLS if t.name == tool_call_name), None)
         requires_approval = tool_def and tool_def.metadata.get("requires_approval")
+
+        logger.info(f"[Tools Router] Tool call detected: {tool_call_name}, requires approval: {requires_approval}")
 
         if requires_approval and not state.get("hitl_task_id_to_resume"):
             return "entry_task_in_database_node"
@@ -312,7 +315,7 @@ if __name__ == "__main__":
                 logger.info(f"Mock user: {user.username} ({user_id})")
 
             # 2. Create a UserRun (represents the message they send)
-            message = "Use tools and tell What is 3 - 2?"
+            message = "Tell me about recent Apple product launches."
             async with AsyncSessionLocal() as session:
                 user_run = await UserRunService.create_user_run(session=session, user_id=user_id, message=message)
                 user_run_id = str(user_run.user_run_id)

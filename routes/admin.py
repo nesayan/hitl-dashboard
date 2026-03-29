@@ -43,7 +43,7 @@ async def approve_task(body: ApproveTaskRequest):
     # 1. Update status to APPROVED
     try:
         async with AsyncSessionLocal() as session:
-            task = await HITLTaskService.update_hitltask_status(
+            task = await HITLTaskService.update_hitltask(
                 session=session,
                 hitl_task_id=body.hitl_task_id,
                 status=HITLTaskStatus.APPROVED,
@@ -84,7 +84,7 @@ async def reject_task(body: RejectTaskRequest):
     """
     try:
         async with AsyncSessionLocal() as session:
-            task = await HITLTaskService.update_hitltask_status(
+            task = await HITLTaskService.update_hitltask(
                 session=session,
                 hitl_task_id=body.hitl_task_id,
                 status=HITLTaskStatus.REJECTED,
