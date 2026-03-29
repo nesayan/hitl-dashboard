@@ -29,6 +29,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 class State(TypedDict):
+    """Graph state shared across all nodes.
+
+    Attributes:
+        messages: Conversation history. Uses LangGraph's add_messages reducer to append.
+        user_id: The authenticated user's UUID.
+        user_run_id: The UserRun UUID for this interaction (used to link HITL tasks).
+        fresh: If True, routes to llm_node (new query). If False, routes to resume_task_node.
+        hitl_task_id_to_resume: The UUID of an approved HITL task to resume. None for fresh queries.
+    """
     messages: Annotated[list[BaseMessage], add_messages]
     user_id: uuid.UUID
     user_run_id: uuid.UUID
@@ -46,12 +55,41 @@ async def get_graph():
 
 
 async def build_graph():
+    """
+    Builds and compiles the LangGraph workflow.
+
+    Graph Flow:
+        Fresh Query (fresh=True):
+            START → llm_node → tools_router
+                → tool_node (no approval needed) → llm_node → ...
+                → entry_task_in_database_node (approval needed) → llm_node → END
+                → END (no tool calls)
+
+        Resume Task (fresh=False):
+            START → resume_task_node → resume_task_router
+                → tool_node (if approved, executes tool) → llm_node → tools_router → END
+                → END (if not approved)
+
+    Nodes:
+        llm_node: Sends messages to Azure OpenAI LLM with tool bindings.
+        tool_node: Executes the tool call (LangGraph prebuilt ToolNode).
+        entry_task_in_database_node: Creates a PENDING HITL task in DB for admin approval.
+        resume_task_node: Fetches an approved HITL task and reconstructs its tool call.
+
+    Routers:
+        check_fresh_or_resume_task: Routes based on state["fresh"].
+        tools_router: Routes LLM output to tool_node, entry_task_in_database_node, or END.
+            - Skips approval gate during resume (tool was already approved).
+            - Saves tool output to HITL task on resume completion.
+        resume_task_router: Routes to tool_node if task is approved, else END.
+    """
 
     workflow = StateGraph(State)
 
     tool_node = ToolNode(TOOLS)
 
     async def check_fresh_or_resume_task(state: State):
+        """Entry router: directs to llm_node for fresh queries, resume_task_node for approved tasks."""
         if state.get("fresh"):
             logger.info("[Graph] Starting fresh execution.")
             return "llm_node"
@@ -59,6 +97,7 @@ async def build_graph():
         return "resume_task_node"
 
     async def llm_node(state: State):
+        """Invokes Azure OpenAI LLM with the current messages and tool bindings."""
         system_prompt = SystemMessage(content='''
             You are a helpful assistant to help solve user's queries.
             Instructions you MUST follow:
@@ -82,6 +121,12 @@ async def build_graph():
         return {"messages": [llm_response]}
     
     async def tools_router(state: State):
+        """Routes LLM output based on tool calls and approval requirements.
+
+        - No tool calls → saves output if resuming, then END.
+        - Tool needs approval (and not resuming) → entry_task_in_database_node.
+        - Otherwise → tool_node (execute directly).
+        """
         last_message = state["messages"][-1]
 
         # if no tool calls, it's the final answer if resuming. Save the answer and go to __end__
@@ -107,6 +152,12 @@ async def build_graph():
         return "tool_node"
         
     async def entry_task_in_database_node(state: State):
+        """Creates a PENDING HITL task in the database for admin approval.
+
+        If a PENDING task with the same user_id, task_name, and task_args already exists,
+        returns a message indicating it's already pending instead of creating a duplicate.
+        Stores the full tool_call_object for later replay on approval.
+        """
         last_message = state["messages"][-1]
         response_messages = []
 
@@ -151,8 +202,14 @@ async def build_graph():
 
         return {"messages": response_messages}
     
-    # This node simulates an LLM behaviour.
+    # Fetches an approved HITL task and reconstructs its tool call as an AIMessage.
     async def resume_task_node(state: State):
+        """Resumes an approved HITL task by reconstructing the original tool call.
+
+        Reads the stored tool_call_object from the DB and returns an AIMessage
+        with tool_calls, which the resume_task_router then sends to tool_node.
+        If the task is not APPROVED, returns a status message and routes to END.
+        """
         hitl_task_to_resume = state.get("hitl_task_id_to_resume")
 
         async with AsyncSessionLocal() as session:
@@ -177,6 +234,7 @@ async def build_graph():
                 }
 
     def resume_task_router(state: State):
+        """Routes resume output: to tool_node if tool calls exist, else END."""
         last_message = state["messages"][-1]
         if hasattr(last_message, "tool_calls") and last_message.tool_calls:
             return "tool_node"
