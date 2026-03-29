@@ -80,4 +80,17 @@ const api = {
     }
     return res.json();
   },
+
+  async queryAgent(userId, message) {
+    const res = await fetch(`${API_BASE}/agent/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId, message }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to query agent");
+    }
+    return res.json();
+  },
 };
