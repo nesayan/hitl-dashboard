@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:80/api";
+// API_BASE is set by /env.js loaded before this script
 
 const api = {
   async getUsers() {

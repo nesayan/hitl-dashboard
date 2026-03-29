@@ -30,6 +30,8 @@ class Settings(BaseSettings):
 
     TAVILY_API_KEY: str = ""
 
+    PORT: int = 80
+
     model_config = {
         "env_file": "core/.env",
         "env_file_encoding": "utf-8",

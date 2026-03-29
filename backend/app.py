@@ -12,6 +12,8 @@ from database.engine import engine, AsyncSessionLocal
 
 from services.service_user import UserService
 
+from core.config import settings
+
 import logging
 from core.config import setup_logging
 
@@ -50,7 +52,7 @@ async def health():
 
 if __name__ == "__main__":
 
-    port = int(os.getenv("PORT", 80))
+    port = settings.PORT
     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
 
 
