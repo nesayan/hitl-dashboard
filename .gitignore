@@ -1,5 +1,5 @@
 # Environment variables
-core/.env
+backend/core/.env
 .env
 .env.local
 
