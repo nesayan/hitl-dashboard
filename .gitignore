@@ -1,7 +1,7 @@
+# ------------- Backend GitIgnore ----------------
+
 # Environment variables
 backend/core/.env
-.env
-.env.local
 
 # Virtual environments
 backend/.venv/
@@ -15,33 +15,34 @@ backend/__pycache__/
 *$py.class
 *.so
 
-# Distribution / packaging
-backend/dist/
-backend/build/
-backend/*.egg-info/
-*.egg
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-Thumbs.db
-Desktop.ini
-.DS_Store
-
 # Database
 backend/*.db
 backend/*.sqlite3
 
+# ------------- Frontend GitIgnore ----------------
+
+# Node modules
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+
+# Environment variables
+frontend/.env
+
+
+# ------------- General GitIgnore ----------------
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
 # Logs
+logs/
 *.log
-
-# Testing
-backend/.pytest_cache/
-backend/.coverage
-backend/htmlcov/
-

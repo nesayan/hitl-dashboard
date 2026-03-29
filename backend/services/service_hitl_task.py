@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 
 from database.models import HITLTask, HITLTaskStatus, UserRun
 
@@ -144,6 +145,9 @@ class HITLTaskService:
         hitl_task = await session.get(HITLTask, UUID(hitl_task_id))
         if not hitl_task:
             raise ValueError(f"HITLTask with id {hitl_task_id} not found.")
+
+        if hitl_task.status == HITLTaskStatus.COMPLETED:
+            raise ValueError(f"Cannot modify a completed task.")
         
         if task_name is not None:
             hitl_task.task_name = task_name
@@ -232,6 +236,7 @@ class HITLTaskService:
             select(HITLTask)
             .join(UserRun, HITLTask.user_run_id == UserRun.user_run_id)
             .where(UserRun.user_id == UUID(user_id))
+            .options(selectinload(HITLTask.user_run))
         )
         return result.scalars().all()
     
@@ -330,6 +335,7 @@ class HITLTaskService:
                     (UserRun.user_id == UUID(user_id)) &
                     (HITLTask.status == status)
                 )
+                .options(selectinload(HITLTask.user_run))
             )
             return result.scalars().all()
         except ValueError as e:

@@ -1,8 +1,9 @@
+import uuid
 from typing import Optional
 from datetime import datetime
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
@@ -24,7 +25,7 @@ class UserUpdateRequest(BaseModel):
 
 
 class UserResponse(BaseModel):
-    user_id: str
+    user_id: uuid.UUID
     username: str
     created_at: datetime
 
@@ -44,6 +45,23 @@ async def get_all_users(
         raise HTTPException(status_code=500, detail="Internal server error.")
 
 
+@router.get("/by-username", status_code=200, response_model=UserResponse)
+async def get_user_by_username(
+    username: str = Query(..., description="The username to search for"),
+    session: AsyncSession = Depends(get_async_db),
+):
+    """Retrieve a single user by their username."""
+    try:
+        user = await UserService.get_user_by_username(session, username)
+    except Exception as e:
+        logger.error(f"Failed to retrieve User: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error.")
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    return user
+
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: str,
@@ -62,7 +80,6 @@ async def get_user(
         raise HTTPException(status_code=404, detail="User not found.")
 
     return user
-
 
 @router.post("/", status_code=201, response_model=UserResponse)
 async def create_user(

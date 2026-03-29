@@ -102,6 +102,31 @@ class UserRunService:
         return result.scalars().all()
 
     @classmethod
+    async def get_user_runs_by_user_id(
+        cls,
+        session: AsyncSession,
+        user_id: str,
+    ) -> list[UserRun]:
+        '''
+        Retrieves all UserRun records for a specific user.
+
+        Args:
+            session: The async database session.
+            user_id: The UUID string of the user to filter by.
+
+        Returns:
+            A list of UserRun records for the given user. Returns an empty list if none exist.
+
+        Raises:
+            ValueError: If user_id is not a valid UUID string.
+        '''
+
+        result = await session.execute(
+            select(UserRun).where(UserRun.user_id == UUID(user_id))
+        )
+        return result.scalars().all()
+
+    @classmethod
     async def update_user_run(
         cls,
         session: AsyncSession,

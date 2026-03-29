@@ -1,8 +1,9 @@
+import uuid
 from typing import Optional
 from datetime import datetime
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
@@ -25,8 +26,8 @@ class UserRunUpdateRequest(BaseModel):
 
 
 class UserRunResponse(BaseModel):
-    user_run_id: str
-    user_id: str
+    user_run_id: uuid.UUID
+    user_id: uuid.UUID
     created_at: datetime
     message: Optional[str] = None
 
@@ -41,6 +42,22 @@ async def get_all_user_runs(
     try:
         user_runs = await UserRunService.get_all_user_runs(session)
         return user_runs
+    except Exception as e:
+        logger.error(f"Failed to retrieve UserRuns: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error.")
+
+
+@router.get("/by-user", response_model=list[UserRunResponse])
+async def get_user_runs_by_user(
+    user_id: str = Query(...),
+    session: AsyncSession = Depends(get_async_db),
+):
+    """Retrieve all user runs for a specific user."""
+    try:
+        user_runs = await UserRunService.get_user_runs_by_user_id(session, user_id)
+        return user_runs
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format.")
     except Exception as e:
         logger.error(f"Failed to retrieve UserRuns: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error.")

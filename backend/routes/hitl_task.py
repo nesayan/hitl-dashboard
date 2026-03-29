@@ -34,8 +34,8 @@ class HITLTaskCreateRequest(BaseModel):
 
 
 class HITLTaskResponse(BaseModel):
-    hitl_task_id: str
-    user_run_id: str
+    hitl_task_id: uuid.UUID
+    user_run_id: uuid.UUID
     task_name: str
     task_args: Optional[dict] = None
     task_description: Optional[str] = None
@@ -46,6 +46,10 @@ class HITLTaskResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class HITLTaskWithRunResponse(HITLTaskResponse):
+    user_run_message: Optional[str] = None
 
 
 @router.get("/", response_model=list[HITLTaskResponse])
@@ -85,7 +89,7 @@ async def create_hitl_task(
     return task
 
 
-@router.get("/user", response_model=list[HITLTaskResponse])
+@router.get("/user", response_model=list[HITLTaskWithRunResponse])
 async def get_hitl_tasks_by_user(
     user_id: str = Query(...),
     status: Optional[HITLTaskStatus] = Query(None),
@@ -94,6 +98,7 @@ async def get_hitl_tasks_by_user(
     """Retrieve HITL tasks for a specific user.
 
     Optionally filter by task status (e.g. pending, approved, rejected).
+    Includes the agent run message from the parent UserRun.
     """
     try:
         if status:
@@ -103,7 +108,22 @@ async def get_hitl_tasks_by_user(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid UUID format.")
 
-    return tasks
+    return [
+        HITLTaskWithRunResponse(
+            hitl_task_id=t.hitl_task_id,
+            user_run_id=t.user_run_id,
+            task_name=t.task_name,
+            task_args=t.task_args,
+            task_description=t.task_description,
+            tool_call_object=t.tool_call_object,
+            status=t.status.value if hasattr(t.status, 'value') else t.status,
+            output=t.output,
+            created_at=t.created_at,
+            updated_at=t.updated_at,
+            user_run_message=t.user_run.message if t.user_run else None,
+        )
+        for t in tasks
+    ]
 
 
 @router.get("/{hitl_task_id}", response_model=HITLTaskResponse)

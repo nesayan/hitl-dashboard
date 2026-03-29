@@ -226,9 +226,22 @@ async def build_graph():
 
             if task.status == HITLTaskStatus.APPROVED:
                 tool_call = task.tool_call_object
+
+                # Fetch the original user message from the UserRun
+                user_run = await UserRunService.get_user_run_by_id(session, str(task.user_run_id))
+                original_question = user_run.message if user_run and user_run.message else "N/A"
+
+                task_context = (
+                    f"The user's original question was: \"{original_question}\". "
+                    f"To answer it, tool '{task.task_name}' was called with arguments {json.dumps(task.task_args or {})}. "
+                    f"The tool has been approved and executed. Summarize the tool result to answer the user's original question."
+                )
                 logger.info(f"[Resume Node] Task {task.hitl_task_id} is approved. Executing tool.")
                 return {
-                    "messages": [AIMessage(content="", tool_calls=[tool_call])]
+                    "messages": [
+                        HumanMessage(content=task_context),
+                        AIMessage(content="", tool_calls=[tool_call]),
+                    ]
                 }
             else:
                 logger.info(f"[Resume Node] Task {task.hitl_task_id} status: {task.status}")
@@ -315,7 +328,7 @@ if __name__ == "__main__":
                 logger.info(f"Mock user: {user.username} ({user_id})")
 
             # 2. Create a UserRun (represents the message they send)
-            message = "Tell me about recent Apple product launches."
+            message = "What is 2-2 ? use tools"
             async with AsyncSessionLocal() as session:
                 user_run = await UserRunService.create_user_run(session=session, user_id=user_id, message=message)
                 user_run_id = str(user_run.user_run_id)
